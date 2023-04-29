@@ -29,7 +29,13 @@ from time import time
 from pyrogram import filters
 from pyrogram.enums import ChatMembersFilter, ChatType
 from pyrogram.errors import FloodWait
-from pyrogram.types import CallbackQuery, ChatMemberUpdated, ChatPermissions, Message
+from pyrogram.types import (
+    CallbackQuery,
+    ChatMemberUpdated,
+    ChatPermissions,
+    ChatPrivileges,
+    Message,
+)
 
 from wbb import BOT_ID, SUDOERS, app, log
 from wbb.core.decorators.errors import capture_err
@@ -41,7 +47,11 @@ from wbb.utils.dbfunctions import (
     remove_warns,
     save_filter,
 )
-from wbb.utils.functions import extract_user, extract_user_and_reason, time_converter
+from wbb.utils.functions import (
+    extract_user,
+    extract_user_and_reason,
+    time_converter,
+)
 
 __MODULE__ = "Admin"
 __HELP__ = """/ban - Ban A User
@@ -73,9 +83,8 @@ __HELP__ = """/ban - Ban A User
 
 async def member_permissions(chat_id: int, user_id: int):
     perms = []
-    try:
-        member = (await app.get_chat_member(chat_id, user_id)).privileges
-    except Exception:
+    member = (await app.get_chat_member(chat_id, user_id)).privileges
+    if not member:
         return []
     if member.can_post_messages:
         perms.append("can_post_messages")
@@ -199,7 +208,9 @@ async def kickFunc(_, message: Message):
     if not user_id:
         return await message.reply_text("I can't find that user.")
     if user_id == BOT_ID:
-        return await message.reply_text("I can't kick myself, i can leave if you want.")
+        return await message.reply_text(
+            "I can't kick myself, i can leave if you want."
+        )
     if user_id in SUDOERS:
         return await message.reply_text("You Wanna Kick The Elevated One?")
     if user_id in (await list_admins(message.chat.id)):
@@ -230,9 +241,13 @@ async def banFunc(_, message: Message):
     if not user_id:
         return await message.reply_text("I can't find that user.")
     if user_id == BOT_ID:
-        return await message.reply_text("I can't ban myself, i can leave if you want.")
+        return await message.reply_text(
+            "I can't ban myself, i can leave if you want."
+        )
     if user_id in SUDOERS:
-        return await message.reply_text("You Wanna Ban The Elevated One?, RECONSIDER!")
+        return await message.reply_text(
+            "You Wanna Ban The Elevated One?, RECONSIDER!"
+        )
     if user_id in (await list_admins(message.chat.id)):
         return await message.reply_text(
             "I can't ban an admin, You know the rules, so do i."
@@ -312,8 +327,12 @@ async def list_ban_(c, message: Message):
         return await message.reply_text(
             "Provide a userid/username along with message link and reason to list-ban"
         )
-    if len(msglink_reason.split(" ")) == 1:  # message link included with the reason
-        return await message.reply_text("You must provide a reason to list-ban")
+    if (
+        len(msglink_reason.split(" ")) == 1
+    ):  # message link included with the reason
+        return await message.reply_text(
+            "You must provide a reason to list-ban"
+        )
     # seperate messge link from reason
     lreason = msglink_reason.split()
     messagelink, reason = lreason[0], " ".join(lreason[1:])
@@ -326,7 +345,9 @@ async def list_ban_(c, message: Message):
     if userid == BOT_ID:
         return await message.reply_text("I can't ban myself.")
     if userid in SUDOERS:
-        return await message.reply_text("You Wanna Ban The Elevated One?, RECONSIDER!")
+        return await message.reply_text(
+            "You Wanna Ban The Elevated One?, RECONSIDER!"
+        )
     splitted = messagelink.split("/")
     uname, mid = splitted[-2], int(splitted[-1])
     m = await message.reply_text(
@@ -371,7 +392,9 @@ async def list_unban_(c, message: Message):
             "Provide a userid/username along with message link to list-unban"
         )
 
-    if not re.search(r"(https?://)?t(elegram)?\.me/\w+/\d+", msglink):  # validate link
+    if not re.search(
+        r"(https?://)?t(elegram)?\.me/\w+/\d+", msglink
+    ):  # validate link
         return await message.reply_text("Invalid message link provided")
 
     splitted = msglink.split("/")
@@ -424,38 +447,47 @@ async def deleteFunc(_, message: Message):
 @adminsOnly("can_promote_members")
 async def promoteFunc(_, message: Message):
     user_id = await extract_user(message)
-    umention = (await app.get_users(user_id)).mention
     if not user_id:
         return await message.reply_text("I can't find that user.")
-    bot = await app.get_chat_member(message.chat.id, BOT_ID)
+    
+    bot = (await app.get_chat_member(message.chat.id, BOT_ID)).privileges
     if user_id == BOT_ID:
         return await message.reply_text("I can't promote myself.")
+    if not bot:
+        return await message.reply_text("I'm not an admin in this chat.")
     if not bot.can_promote_members:
         return await message.reply_text("I don't have enough permissions")
+
+    umention = (await app.get_users(user_id)).mention
+    
     if message.command[0][0] == "f":
         await message.chat.promote_member(
             user_id=user_id,
-            can_change_info=bot.can_change_info,
-            can_invite_users=bot.can_invite_users,
-            can_delete_messages=bot.can_delete_messages,
-            can_restrict_members=bot.can_restrict_members,
-            can_pin_messages=bot.can_pin_messages,
-            can_promote_members=bot.can_promote_members,
-            can_manage_chat=bot.can_manage_chat,
-            can_manage_video_chats=bot.can_manage_video_chats,
+            privileges=ChatPrivileges(
+                can_change_info=bot.can_change_info,
+                can_invite_users=bot.can_invite_users,
+                can_delete_messages=bot.can_delete_messages,
+                can_restrict_members=bot.can_restrict_members,
+                can_pin_messages=bot.can_pin_messages,
+                can_promote_members=bot.can_promote_members,
+                can_manage_chat=bot.can_manage_chat,
+                can_manage_video_chats=bot.can_manage_video_chats,
+            ),
         )
         return await message.reply_text(f"Fully Promoted! {umention}")
 
     await message.chat.promote_member(
         user_id=user_id,
-        can_change_info=False,
-        can_invite_users=bot.can_invite_users,
-        can_delete_messages=bot.can_delete_messages,
-        can_restrict_members=False,
-        can_pin_messages=False,
-        can_promote_members=False,
-        can_manage_chat=bot.can_manage_chat,
-        can_manage_video_chats=bot.can_manage_video_chats,
+        privileges=ChatPrivileges(
+            can_change_info=False,
+            can_invite_users=bot.can_invite_users,
+            can_delete_messages=bot.can_delete_messages,
+            can_restrict_members=False,
+            can_pin_messages=False,
+            can_promote_members=False,
+            can_manage_chat=bot.can_manage_chat,
+            can_manage_video_chats=bot.can_manage_video_chats,
+        ),
     )
     await message.reply_text(f"Promoted! {umention}")
 
@@ -477,14 +509,16 @@ async def demote(_, message: Message):
         )
     await message.chat.promote_member(
         user_id=user_id,
-        can_change_info=False,
-        can_invite_users=False,
-        can_delete_messages=False,
-        can_restrict_members=False,
-        can_pin_messages=False,
-        can_promote_members=False,
-        can_manage_chat=False,
-        can_manage_video_chats=False,
+        privileges=ChatPrivileges(
+            can_change_info=False,
+            can_invite_users=False,
+            can_delete_messages=False,
+            can_restrict_members=False,
+            can_pin_messages=False,
+            can_promote_members=False,
+            can_manage_chat=False,
+            can_manage_video_chats=False,
+        ),
     )
     umention = (await app.get_users(user_id)).mention
     await message.reply_text(f"Demoted! {umention}")
@@ -527,7 +561,9 @@ async def mute(_, message: Message):
     if user_id == BOT_ID:
         return await message.reply_text("I can't mute myself.")
     if user_id in SUDOERS:
-        return await message.reply_text("You wanna mute the elevated one?, RECONSIDER!")
+        return await message.reply_text(
+            "You wanna mute the elevated one?, RECONSIDER!"
+        )
     if user_id in (await list_admins(message.chat.id)):
         return await message.reply_text(
             "I can't mute an admin, You know the rules, so do i."
@@ -613,9 +649,13 @@ async def warn_user(_, message: Message):
     if not user_id:
         return await message.reply_text("I can't find that user.")
     if user_id == BOT_ID:
-        return await message.reply_text("I can't warn myself, i can leave if you want.")
+        return await message.reply_text(
+            "I can't warn myself, i can leave if you want."
+        )
     if user_id in SUDOERS:
-        return await message.reply_text("You Wanna Warn The Elevated One?, RECONSIDER!")
+        return await message.reply_text(
+            "You Wanna Warn The Elevated One?, RECONSIDER!"
+        )
     if user_id in (await list_admins(chat_id)):
         return await message.reply_text(
             "I can't warn an admin, You know the rules, so do i."
@@ -634,7 +674,9 @@ async def warn_user(_, message: Message):
         await message.reply_to_message.delete()
     if warns >= 2:
         await message.chat.ban_member(user_id)
-        await message.reply_text(f"Number of warns of {mention} exceeded, BANNED!")
+        await message.reply_text(
+            f"Number of warns of {mention} exceeded, BANNED!"
+        )
         await remove_warns(chat_id, await int_to_alpha(user_id))
     else:
         warn = {"warns": warns + 1}
@@ -718,17 +760,24 @@ async def check_warns(_, message: Message):
 
 
 @app.on_message(
-    (filters.command("report") | filters.command(["admins", "admin"], prefixes="@"))
+    (
+        filters.command("report")
+        | filters.command(["admins", "admin"], prefixes="@")
+    )
     & ~filters.private
 )
 @capture_err
 async def report_user(_, message):
     if not message.reply_to_message:
-        return await message.reply_text("Reply to a message to report that user.")
+        return await message.reply_text(
+            "Reply to a message to report that user."
+        )
 
     reply = message.reply_to_message
     reply_id = reply.from_user.id if reply.from_user else reply.sender_chat.id
-    user_id = message.from_user.id if message.from_user else message.sender_chat.id
+    user_id = (
+        message.from_user.id if message.from_user else message.sender_chat.id
+    )
     if reply_id == user_id:
         return await message.reply_text("Why are you reporting yourself ?")
 
@@ -753,9 +802,12 @@ async def report_user(_, message):
         reply.from_user.mention if reply.from_user else reply.sender_chat.title
     )
     text = f"Reported {user_mention} to admins!"
-    admin_data = await app.get_chat_members(
-        chat_id=message.chat.id, filter=ChatMembersFilter.ADMINISTRATORS
-    )  # will it giv floods ?
+    admin_data = [
+        i
+        async for i in app.get_chat_members(
+            chat_id=message.chat.id, filter=ChatMembersFilter.ADMINISTRATORS
+        )
+    ]  # will it give floods ???
     for admin in admin_data:
         if admin.user.is_bot or admin.user.is_deleted:
             # return bots or deleted admins
