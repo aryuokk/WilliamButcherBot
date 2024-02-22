@@ -28,6 +28,7 @@ import time
 
 import psutil
 from pyrogram import filters, types
+from pyrogram.enums import ChatMemberStatus
 from pyrogram.errors import FloodWait
 from pyrogram.types import InlineKeyboardMarkup
 
@@ -44,9 +45,9 @@ from wbb.utils import formatter
 from wbb.utils.dbfunctions import (
     add_gban_user,
     get_served_chats,
+    get_served_users,
     is_gbanned_user,
     remove_gban_user,
-    get_served_users,
 )
 from wbb.utils.functions import extract_user, extract_user_and_reason, restart
 
@@ -65,6 +66,8 @@ __HELP__ = """
 /ubroadcast - To Broadcast A Message To All Users.
 
 /update - To Update And Restart The Bot
+
+/restart - To Restart the bot
 
 /eval - Execute Python Code
 
@@ -120,8 +123,12 @@ async def ban_globally(_, message):
     number_of_chats = 0
     for served_chat in served_chats:
         try:
-            await app.ban_chat_member(served_chat["chat_id"], user.id)
-            number_of_chats += 1
+            chat_member = await app.get_chat_member(
+                served_chat["chat_id"], user.id
+            )
+            if chat_member.status == ChatMemberStatus.MEMBER:
+                await app.ban_chat_member(served_chat["chat_id"], user.id)
+                number_of_chats += 1
             await asyncio.sleep(1)
         except FloodWait as e:
             await asyncio.sleep(int(e.value))
@@ -186,27 +193,23 @@ async def unban_globally(_, message):
 @capture_err
 async def broadcast_message(_, message):
     sleep_time = 0.1
-    text = message.reply_to_message.text.markdown
     reply_message = message.reply_to_message
 
-    reply_markup = None
-    if reply_message.reply_markup:
-        reply_markup = InlineKeyboardMarkup(reply_message.reply_markup.inline_keyboard)
     sent = 0
     schats = await get_served_chats()
     chats = [int(chat["chat_id"]) for chat in schats]
     m = await message.reply_text(
         f"Broadcast in progress, will take {len(chats) * sleep_time} seconds."
     )
+    to_copy = not reply_message.poll
     for i in chats:
         try:
-            await app.send_message(
-                i,
-                text=text,
-                reply_markup=reply_markup,
-            )
-            await asyncio.sleep(sleep_time)
+            if to_copy:
+                await reply_message.copy(i)
+            else:
+                await reply_message.forward(i)
             sent += 1
+            await asyncio.sleep(sleep_time)
         except FloodWait as e:
             await asyncio.sleep(int(e.value))
         except Exception:
@@ -226,7 +229,17 @@ async def update_restart(_, message):
         await message.reply_text(f"```{out}```")
     except Exception as e:
         return await message.reply_text(str(e))
-    m = await message.reply_text("**Updated with default branch, restarting now.**")
+    m = await message.reply_text(
+        "**Updated with default branch, restarting now.**"
+    )
+    await restart(m)
+
+
+@app.on_message(filters.command("restart") & SUDOERS)
+async def update_restart(_, message):
+    m = await message.reply_text(
+        "**Bot is restarting now.**"
+    )
     await restart(m)
 
 
@@ -237,26 +250,21 @@ async def broadcast_message(_, message):
     sent = 0
     schats = await get_served_users()
     chats = [int(chat["user_id"]) for chat in schats]
-    text = message.reply_to_message.text.markdown
     reply_message = message.reply_to_message
-
-    reply_markup = None
-    if reply_message.reply_markup:
-        reply_markup = InlineKeyboardMarkup(reply_message.reply_markup.inline_keyboard)
 
     m = await message.reply_text(
         f"Broadcast in progress, will take {len(chats) * sleep_time} seconds."
     )
 
+    to_copy = not reply_message.poll
     for i in chats:
         try:
-            await app.send_message(
-                i,
-                text=text,
-                reply_markup=reply_markup,
-            )
-            await asyncio.sleep(sleep_time)
+            if to_copy:
+                await reply_message.copy(i)
+            else:
+                await reply_message.forward(i)
             sent += 1
+            await asyncio.sleep(sleep_time)
         except FloodWait as e:
             await asyncio.sleep(int(e.value))
         except Exception:

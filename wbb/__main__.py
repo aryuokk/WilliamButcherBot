@@ -40,11 +40,13 @@ from wbb import (
     app,
     log,
 )
+from wbb.core.keyboard import ikb
 from wbb.modules import ALL_MODULES
 from wbb.modules.sudoers import bot_sys_stats
 from wbb.utils import paginate_modules
 from wbb.utils.constants import MARKDOWN
-from wbb.utils.dbfunctions import clean_restart_stage
+from wbb.utils.dbfunctions import clean_restart_stage, get_rules
+from wbb.utils.functions import extract_text_and_keyb
 
 loop = asyncio.get_event_loop()
 
@@ -56,9 +58,15 @@ async def start_bot():
 
     for module in ALL_MODULES:
         imported_module = importlib.import_module("wbb.modules." + module)
-        if hasattr(imported_module, "__MODULE__") and imported_module.__MODULE__:
+        if (
+            hasattr(imported_module, "__MODULE__")
+            and imported_module.__MODULE__
+        ):
             imported_module.__MODULE__ = imported_module.__MODULE__
-            if hasattr(imported_module, "__HELP__") and imported_module.__HELP__:
+            if (
+                hasattr(imported_module, "__HELP__")
+                and imported_module.__HELP__
+            ):
                 HELPABLE[
                     imported_module.__MODULE__.replace(" ", "_").lower()
                 ] = imported_module
@@ -109,7 +117,9 @@ async def start_bot():
 home_keyboard_pm = InlineKeyboardMarkup(
     [
         [
-            InlineKeyboardButton(text="Commands ❓", callback_data="bot_commands"),
+            InlineKeyboardButton(
+                text="Commands ❓", callback_data="bot_commands"
+            ),
             InlineKeyboardButton(
                 text="Repo 🛠",
                 url="https://github.com/thehamkercat/WilliamButcherBot",
@@ -120,7 +130,9 @@ home_keyboard_pm = InlineKeyboardMarkup(
                 text="System Stats 🖥",
                 callback_data="stats_callback",
             ),
-            InlineKeyboardButton(text="Support 👨", url="http://t.me/WBBSupport"),
+            InlineKeyboardButton(
+                text="Support 👨", url="http://t.me/WBBSupport"
+            ),
         ],
         [
             InlineKeyboardButton(
@@ -160,15 +172,63 @@ keyboard = InlineKeyboardMarkup(
 )
 
 
+FED_MARKUP = InlineKeyboardMarkup(
+    [
+        [
+            InlineKeyboardButton(
+                "Fed Owner Commands", callback_data="fed_owner"
+            ),
+            InlineKeyboardButton(
+                "Fed Admin Commands", callback_data="fed_admin"
+            ),
+        ],
+        [
+            InlineKeyboardButton("User Commands", callback_data="fed_user"),
+        ],
+        [
+            InlineKeyboardButton("Back", callback_data="help_back"),
+        ],
+    ]
+)
+
+
 @app.on_message(filters.command("start"))
 async def start(_, message):
     if message.chat.type != ChatType.PRIVATE:
-        return await message.reply("Pm Me For More Details.", reply_markup=keyboard)
+        return await message.reply(
+            "Pm Me For More Details.", reply_markup=keyboard
+        )
     if len(message.text.split()) > 1:
+        user = await app.get_users(message.from_user.id)
         name = (message.text.split(None, 1)[1]).lower()
+        match = re.match(r"rules_(.*)", name)
+        if match:
+            chat_id = match.group(1)
+            user_id = message.from_user.id
+            chat = await app.get_chat(int(chat_id))
+            text = f"**The rules for `{chat.title}` are:\n\n**"
+            rules = await get_rules(int(chat_id))
+            if rules:
+                text = text + rules
+                if "{chat}" in text:
+                    text = text.replace("{chat}", chat.title)
+                if "{name}" in text:
+                    text = text.replace("{name}", user.mention)
+                keyb = None
+                if "~" in text:
+                    text, keyb = extract_text_and_keyb(ikb, text)
+                await app.send_message(user_id, text=text, reply_markup=keyb)
+            else:
+                return await app.send_message(
+                    user_id,
+                    "The group admins haven't set any rules for this chat yet. "
+                    "This probably doesn't mean it's lawless though...!",
+                )
         if name == "mkdwn_help":
             await message.reply(
-                MARKDOWN, parse_mode=ParseMode.HTML, disable_web_page_preview=True
+                MARKDOWN,
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True,
             )
         elif "_" in name:
             module = name.split("_", 1)[1]
@@ -176,7 +236,19 @@ async def start(_, message):
                 f"Here is the help for **{HELPABLE[module].__MODULE__}**:\n"
                 + HELPABLE[module].__HELP__
             )
-            await message.reply(text, disable_web_page_preview=True)
+            if module == "federation":
+                return await message.reply(
+                    text=text,
+                    reply_markup=FED_MARKUP,
+                    disable_web_page_preview=True,
+                )
+            await message.reply(
+                text,
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("back", callback_data="help_back")]]
+                ),
+                disable_web_page_preview=True,
+            )
         elif name == "help":
             text, keyb = await help_parser(message.from_user.first_name)
             await message.reply(
@@ -212,9 +284,13 @@ async def help_command(_, message):
                     reply_markup=key,
                 )
             else:
-                await message.reply("PM Me For More Details.", reply_markup=keyboard)
+                await message.reply(
+                    "PM Me For More Details.", reply_markup=keyboard
+                )
         else:
-            await message.reply("Pm Me For More Details.", reply_markup=keyboard)
+            await message.reply(
+                "Pm Me For More Details.", reply_markup=keyboard
+            )
     else:
         if len(message.command) >= 2:
             name = (message.text.split(None, 1)[1]).replace(" ", "_").lower()
@@ -225,14 +301,18 @@ async def help_command(_, message):
                 )
                 await message.reply(text, disable_web_page_preview=True)
             else:
-                text, help_keyboard = await help_parser(message.from_user.first_name)
+                text, help_keyboard = await help_parser(
+                    message.from_user.first_name
+                )
                 await message.reply(
                     text,
                     reply_markup=help_keyboard,
                     disable_web_page_preview=True,
                 )
         else:
-            text, help_keyboard = await help_parser(message.from_user.first_name)
+            text, help_keyboard = await help_parser(
+                message.from_user.first_name
+            )
             await message.reply(
                 text, reply_markup=help_keyboard, disable_web_page_preview=True
             )
@@ -294,10 +374,17 @@ General command are:
     if mod_match:
         module = (mod_match.group(1)).replace(" ", "_")
         text = (
-            "{} **{}**:\n".format("Here is the help for", HELPABLE[module].__MODULE__)
+            "{} **{}**:\n".format(
+                "Here is the help for", HELPABLE[module].__MODULE__
+            )
             + HELPABLE[module].__HELP__
         )
-
+        if module == "federation":
+            return await query.message.edit(
+                text=text,
+                reply_markup=FED_MARKUP,
+                disable_web_page_preview=True,
+            )
         await query.message.edit(
             text=text,
             reply_markup=InlineKeyboardMarkup(
@@ -335,7 +422,9 @@ General command are:
     elif back_match:
         await query.message.edit(
             text=top_text,
-            reply_markup=InlineKeyboardMarkup(paginate_modules(0, HELPABLE, "help")),
+            reply_markup=InlineKeyboardMarkup(
+                paginate_modules(0, HELPABLE, "help")
+            ),
             disable_web_page_preview=True,
         )
 

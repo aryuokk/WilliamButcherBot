@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 from asyncio import get_running_loop, sleep
-from time import time
+from datetime import datetime, timedelta
 
 from pyrogram import filters
 from pyrogram.types import (
@@ -57,7 +57,11 @@ def reset_flood(chat_id, user_id=0):
 
 
 @app.on_message(
-    ~filters.service & ~filters.me & ~filters.private & ~filters.channel & ~filters.bot,
+    ~filters.service
+    & ~filters.me
+    & ~filters.private
+    & ~filters.channel
+    & ~filters.bot,
     group=flood_group,
 )
 @capture_err
@@ -96,7 +100,7 @@ async def flood_control_func(_, message: Message):
             await message.chat.restrict_member(
                 user_id,
                 permissions=ChatPermissions(),
-                until_date=int(time() + 3600),
+                until_date=datetime.now() + timedelta(minutes=60),
             )
         except Exception:
             return
